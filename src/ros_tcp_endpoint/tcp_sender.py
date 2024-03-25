@@ -18,6 +18,7 @@ import time
 import threading
 import struct
 import json
+from std_msgs.msg import Float32, Int32
 
 from .client import ClientThread
 from .thread_pauser import ThreadPauser
@@ -31,6 +32,28 @@ except:
     from Queue import Queue
     from Queue import Empty
 
+class Stack:
+    def __init__(self, maxsize=None):
+        self.q = Queue()
+        self.maxsize = maxsize
+
+    def put(self, item):
+        self.q.put(item)
+        if self.maxsize is not None and self.q.qsize() >= self.maxsize:
+            self.q.get()
+
+    def get(self, timeout=None):
+        return self.q.get(timeout=timeout)
+
+    def is_empty(self):
+        return self.q.empty()
+
+    def peek(self):
+        if not self.is_empty():
+            return self.items[-1]
+
+    def qsize(self):
+        return self.q.qsize()
 
 class UnityTcpSender:
     """
@@ -50,6 +73,14 @@ class UnityTcpSender:
         self.next_srv_id = 1001
         self.srv_lock = threading.Lock()
         self.services_waiting = {}
+
+        self.msg = Float32()
+        self.countmsg = Int32
+        self.count_pub = rospy.Publisher("/time_server_count", Int32, queue_size=10)
+
+        self.time_pub = rospy.Publisher("/time_server", Float32, queue_size=10)
+        self.total_pub = rospy.Publisher("/time_server_total", Float32, queue_size=10)
+
 
     def send_unity_info(self, text):
         if self.queue is not None:
@@ -149,7 +180,7 @@ class UnityTcpSender:
 
     def sender_loop(self, conn, tid, halt_event):
         s = None
-        local_queue = Queue()
+        local_queue = Stack(80)
 
         # send a handshake message to confirm the connection and version number
         handshake_metadata = SysCommand_Handshake_Metadata()
@@ -161,11 +192,13 @@ class UnityTcpSender:
 
         try:
             while not halt_event.is_set():
+                stime = time.time()
                 try:
                     item = local_queue.get(timeout=self.time_between_halt_checks)
                 except Empty:
                     # I'd like to just wait on the queue, but we also need to check occasionally for the connection being closed
                     # (otherwise the thread never terminates.)
+                    self.total_pub.publish(Float32(time.time() - stime))
                     continue
 
                 # print("Sender {} sending an item".format(tid))
@@ -175,6 +208,11 @@ class UnityTcpSender:
                 except Exception as e:
                     self.tcp_server.logerr("Exception {}".format(e))
                     break
+
+                stime = time.time() - stime
+                self.msg.data = stime
+                self.time_pub.publish(self.msg)
+                self.count_pub.publish(Int32(local_queue.qsize()))
         finally:
             halt_event.set()
             with self.queue_lock:
