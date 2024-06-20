@@ -15,6 +15,7 @@
 import rospy
 import re
 from .communication import RosSender
+from tf2_msgs.msg import TFMessage
 
 
 class RosPublisher(RosSender):
@@ -49,6 +50,11 @@ class RosPublisher(RosSender):
             None: Explicitly return None so behaviour can be
         """
         self.msg.deserialize(data)
+        if self.msg._has_header:
+            self.msg.header.stamp = rospy.Time.now()
+        if type(self.msg) == TFMessage:
+            for transform in self.msg.transforms:
+                transform.header.stamp = rospy.Time.now()
         self.pub.publish(self.msg)
 
         return None
