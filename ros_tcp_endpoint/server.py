@@ -118,13 +118,38 @@ class TcpServer(Node):
         self.unity_tcp_sender.send_unity_service_response(srv_id, data)
 
     def handle_syscommand(self, topic, data):
-        function = getattr(self.syscommands, topic[2:])
+        # Safely resolve the syscommand function
+        function = getattr(self.syscommands, topic[2:], None)
         if function is None:
             self.send_unity_error("Don't understand SysCommand.'{}'".format(topic))
-        else:
-            message_json = data.decode("utf-8")[:-1]
-            params = json.loads(message_json)
+            return
+
+        # Decode payload, strip trailing nulls/newlines/whitespace
+        try:
+            message_text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            # Fall back with replacement for non-UTF8 bytes and warn
+            message_text = data.decode("utf-8", errors="replace")
+            self.logwarn("Non-UTF8 bytes in syscommand payload; invalid bytes replaced.")
+
+        message_text = message_text.rstrip("\x00").strip()
+
+        # Parse JSON safely and report errors back to Unity
+        try:
+            params = json.loads(message_text) if message_text else {}
+        except json.JSONDecodeError as e:
+            err_msg = f"Failed to parse syscommand JSON: {e}"
+            self.send_unity_error(err_msg)
+            self.logerr(f"{err_msg} -- payload: {message_text!r}")
+            return
+
+        # Call the syscommand and handle unexpected argument errors
+        try:
             function(**params)
+        except TypeError as e:
+            err_msg = f"SysCommand call error: {e}"
+            self.send_unity_error(err_msg)
+            self.logerr(f"{err_msg} -- command: {topic}, params: {params}")
 
     def loginfo(self, text):
         self.get_logger().info(text)
