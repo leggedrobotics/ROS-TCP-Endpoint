@@ -22,6 +22,11 @@ Added Sonarqube scanner
 
 ### Fixed
 
+## [0.7.1] - 2025-10-23
+
+### Fixed
+
+Fixed JSON Decode Error with more robust decoding
 
 ## [0.7.0] - 2022-02-01
 
