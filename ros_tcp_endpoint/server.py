@@ -30,6 +30,7 @@ from .subscriber import RosSubscriber
 from .publisher import RosPublisher
 from .service import RosService
 from .unity_service import UnityService
+from .publishers import get_publisher as get_registered_publisher
 
 
 class TcpServer(Node):
@@ -264,7 +265,15 @@ class SysCommands:
         if old_node is not None:
             self.tcp_server.unregister_node(old_node)
 
-        new_publisher = RosPublisher(topic, message_class, queue_size=queue_size, latch=latch)
+        # Check if there's a registered publisher for this topic
+        registered = get_registered_publisher(message_class)
+        if registered is not None:
+            # Use the registered publisher class
+            publisher_class = registered['class']
+            new_publisher = publisher_class(topic, queue_size=queue_size)
+        else:
+            # Fall back to default RosPublisher
+            new_publisher = RosPublisher(topic, message_class, queue_size=queue_size, latch=latch)
 
         self.tcp_server.publishers_table[topic] = new_publisher
         if self.tcp_server.executor is not None:
