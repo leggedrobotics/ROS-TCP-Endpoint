@@ -39,6 +39,7 @@ class RosPublisher(RosSender):
         RosSender.__init__(self, node_name)
         self.msg = message_class()
         self.pub = self.create_publisher(message_class, topic, queue_size)
+        self._is_ros2_compatible = True
 
     def send(self, data):
         """
@@ -51,11 +52,17 @@ class RosPublisher(RosSender):
         Returns:
             None: Explicitly return None so behaviour can be
         """
-        # message_type = type(self.msg)
-        # message = deserialize_message(data, message_type)
+        if not self._is_ros2_compatible:
+            return None
 
-        self.pub.publish(data)
+        try:
+            message_type = type(self.msg)
+            message = deserialize_message(data, message_type)
 
+            self.pub.publish(message)
+        except Exception as e:
+            self.get_logger().error(f"Failed to publish message: {e} Will disable publisher for topic: {self.pub.topic_name}")
+            self._is_ros2_compatible = False
         return None
 
     def unregister(self):
