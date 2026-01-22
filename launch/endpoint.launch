@@ -6,4 +6,7 @@
         <param name="tcp_ip" type="string" value="$(arg tcp_ip)"/>
         <param name="tcp_port" type="int" value="$(arg tcp_port)"/>
     </node>
+
+    <node pkg="ros_tcp_endpoint" type="adb_connector.sh" name="adb_reverse" 
+          args="$(arg tcp_port)" output="screen" />
 </launch>
