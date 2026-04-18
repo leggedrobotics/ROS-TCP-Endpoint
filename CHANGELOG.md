@@ -22,6 +22,8 @@ Added Sonarqube scanner
 
 ### Fixed
 
+Fix crashes when repeatedly connecting and disconnecting
+
 ## [0.7.1] - 2025-10-23
 
 ### Fixed
