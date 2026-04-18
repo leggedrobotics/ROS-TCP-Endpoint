@@ -189,7 +189,11 @@ class TcpServer(Node):
             executor.add_node(ros_node)
 
         self.executor = executor
-        executor.spin()
+        while rclpy.ok():
+            try:
+                executor.spin_once(timeout_sec=0.1)
+            except Exception as e:
+                self.logwarn("Error occurred while spinning executor: {}, trying to recover...".format(e))
 
     def unregister_node(self, old_node):
         if old_node is not None:

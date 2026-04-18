@@ -55,44 +55,45 @@ class UnityTcpSender:
         self.srv_lock = threading.Lock()
         self.services_waiting = {}
 
+    def enqueue(self, payload):
+        # Make enqueue atomic to avoids races where queue becomes None between a check and put().
+        with self.queue_lock:
+            if self.queue is None:
+                return False
+            else:
+                self.queue.put(payload)
+                return True
+
     def send_unity_info(self, text):
-        if self.queue is not None:
-            command = SysCommand_Log()
-            command.text = text
-            serialized_bytes = ClientThread.serialize_command("__log", command)
-            self.queue.put(serialized_bytes)
+        command = SysCommand_Log()
+        command.text = text
+        serialized_bytes = ClientThread.serialize_command("__log", command)
+        self.enqueue(serialized_bytes)
 
     def send_unity_warning(self, text):
-        if self.queue is not None:
-            command = SysCommand_Log()
-            command.text = text
-            serialized_bytes = ClientThread.serialize_command("__warn", command)
-            self.queue.put(serialized_bytes)
+        command = SysCommand_Log()
+        command.text = text
+        serialized_bytes = ClientThread.serialize_command("__warn", command)
+        self.enqueue(serialized_bytes)
 
     def send_unity_error(self, text):
-        if self.queue is not None:
-            command = SysCommand_Log()
-            command.text = text
-            serialized_bytes = ClientThread.serialize_command("__error", command)
-            self.queue.put(serialized_bytes)
+        command = SysCommand_Log()
+        command.text = text
+        serialized_bytes = ClientThread.serialize_command("__error", command)
+        self.enqueue(serialized_bytes)
 
     def send_ros_service_response(self, srv_id, destination, response):
-        if self.queue is not None:
-            command = SysCommand_Service()
-            command.srv_id = srv_id
-            serialized_header = ClientThread.serialize_command("__response", command)
-            serialized_message = ClientThread.serialize_message(destination, response)
-            self.queue.put(b"".join([serialized_header, serialized_message]))
+        command = SysCommand_Service()
+        command.srv_id = srv_id
+        serialized_header = ClientThread.serialize_command("__response", command)
+        serialized_message = ClientThread.serialize_message(destination, response)
+        self.enqueue(b"".join([serialized_header, serialized_message]))
 
     def send_unity_message(self, topic, message):
-        if self.queue is not None:
-            serialized_message = ClientThread.serialize_message(topic, message)
-            self.queue.put(serialized_message)
+        serialized_message = ClientThread.serialize_message(topic, message)
+        self.enqueue(serialized_message)
 
     def send_unity_service_request(self, topic, service_class, request):
-        if self.queue is None:
-            return None
-
         thread_pauser = ThreadPauser()
         with self.srv_lock:
             srv_id = self.next_srv_id
@@ -103,7 +104,7 @@ class UnityTcpSender:
         command.srv_id = srv_id
         serialized_header = ClientThread.serialize_command("__request", command)
         serialized_message = ClientThread.serialize_message(topic, request)
-        self.queue.put(b"".join([serialized_header, serialized_message]))
+        self.enqueue(b"".join([serialized_header, serialized_message]))
 
         # rospy starts a new thread for each service request,
         # so it won't break anything if we sleep now while waiting for the response
@@ -133,27 +134,26 @@ class UnityTcpSender:
             return None
 
     def send_topic_list(self):
-        if self.queue is not None:
-            topic_list = SysCommand_TopicsResponse()
-            topics_and_types = self.tcp_server.get_topic_names_and_types()
-            topic_list.topics = [item[0] for item in topics_and_types]
-            for i in topics_and_types:
-                node = self.get_registered_topic(i[0])
-                if len(i[1]) > 1:
-                    if node is not None:
-                        self.tcp_server.get_logger().warning(
-                            "Only one message type per topic is supported, but found multiple types for topic {}; maintaining {} as the subscribed type.".format(
-                                i[0], self.parse_message_name(node.msg)
-                            )
+        topic_list = SysCommand_TopicsResponse()
+        topics_and_types = self.tcp_server.get_topic_names_and_types()
+        topic_list.topics = [item[0] for item in topics_and_types]
+        for i in topics_and_types:
+            node = self.get_registered_topic(i[0])
+            if len(i[1]) > 1:
+                if node is not None:
+                    self.tcp_server.get_logger().warning(
+                        "Only one message type per topic is supported, but found multiple types for topic {}; maintaining {} as the subscribed type.".format(
+                            i[0], self.parse_message_name(node.msg)
                         )
-                topic_list.types = [
-                    item[1][0].replace("/msg/", "/")
-                    if (len(item[1]) <= 1)
-                    else self.parse_message_name(node.msg)
-                    for item in topics_and_types
-                ]
-            serialized_bytes = ClientThread.serialize_command("__topic_list", topic_list)
-            self.queue.put(serialized_bytes)
+                    )
+            topic_list.types = [
+                item[1][0].replace("/msg/", "/")
+                if (len(item[1]) <= 1)
+                else self.parse_message_name(node.msg)
+                for item in topics_and_types
+            ]
+        serialized_bytes = ClientThread.serialize_command("__topic_list", topic_list)
+        self.enqueue(serialized_bytes)
 
     def start_sender(self, conn, halt_event):
         sender_thread = threading.Thread(
